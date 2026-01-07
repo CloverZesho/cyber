@@ -209,9 +209,11 @@ export default function AssessmentDetailPage() {
   const handleSubmit = async () => {
     if (!assessment) return;
     setSubmitting(true);
+    setGeneratingReport(true);
     const scores = calculateScores();
 
     try {
+      // Add risks to risk register
       for (const risk of scores.risks) {
         if (!risk.addedToRiskRegister) {
           await fetch('/api/risks', {
@@ -230,6 +232,7 @@ export default function AssessmentDetailPage() {
         }
       }
 
+      // Submit assessment
       const res = await fetch(`/api/assessments/${id}/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -249,9 +252,31 @@ export default function AssessmentDetailPage() {
         const data = await res.json();
         setSubmissionResult(data.submission);
         setShowResultsModal(true);
+
+        // Auto-generate AI report and save to admin reports
+        try {
+          const reportRes = await fetch('/api/ai/generate-report', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              submission: data.submission,
+              assessmentTitle: assessment.title,
+              saveToAdminReports: true
+            }),
+          });
+          if (reportRes.ok) {
+            const reportData = await reportRes.json();
+            setAiReport(reportData.report);
+          }
+        } catch (reportError) {
+          console.error('Report generation error:', reportError);
+        }
       }
     } catch (error) { console.error('Submit error:', error); }
-    finally { setSubmitting(false); }
+    finally {
+      setSubmitting(false);
+      setGeneratingReport(false);
+    }
   };
 
   const handleGenerateReport = async () => {
@@ -312,18 +337,19 @@ export default function AssessmentDetailPage() {
           <p className="text-gray-600">{assessment.description}</p>
         </div>
         <div className="flex gap-2">
-          {answeredCount === totalQuestions && totalQuestions > 0 && (
-            <button type="button" onClick={handleSubmit} disabled={submitting} className="btn-primary">{submitting ? 'Submitting...' : 'Submit Assessment'}</button>
+          {answeredCount > 0 && (
+            <button type="button" onClick={handleSubmit} disabled={submitting} className="btn-primary">
+              {submitting ? 'Submitting...' : `Submit Assessment (${answeredCount}/${totalQuestions})`}
+            </button>
           )}
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="card bg-blue-50"><div className="text-2xl font-bold text-blue-700">{progress}%</div><div className="text-sm text-blue-600">Progress</div></div>
-        <div className="card bg-green-50"><div className="text-2xl font-bold text-green-700">{scores.overall.percentage}%</div><div className="text-sm text-green-600">Score</div></div>
         <div className="card bg-purple-50"><div className="text-2xl font-bold text-purple-700">{answeredCount}/{totalQuestions}</div><div className="text-sm text-purple-600">Answered</div></div>
-        <div className="card bg-red-50"><div className="text-2xl font-bold text-red-700">{scores.risks.length}</div><div className="text-sm text-red-600">Risks Found</div></div>
         <div className="card bg-orange-50"><div className="text-2xl font-bold text-orange-700">{uniqueDomains.length}</div><div className="text-sm text-orange-600">Domains</div></div>
+        <div className="card bg-gray-50"><div className="text-2xl font-bold text-gray-700">{totalQuestions - answeredCount}</div><div className="text-sm text-gray-600">Remaining</div></div>
       </div>
 
       <div className="h-3 bg-gray-200 rounded-full overflow-hidden"><div className="h-full bg-primary-600 transition-all" style={{ width: `${progress}%` }} /></div>
@@ -344,7 +370,7 @@ export default function AssessmentDetailPage() {
           const answer = answers[q.id];
           const qType = q.type || 'yes_no';
           return (
-            <div key={q.id} className={`card border-l-4 ${answer?.flaggedAsRisk ? 'border-l-red-500 bg-red-50' : answer ? 'border-l-green-500' : 'border-l-gray-300'}`}>
+            <div key={q.id} className={`card border-l-4 ${answer ? 'border-l-primary-500' : 'border-l-gray-300'}`}>
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -353,8 +379,7 @@ export default function AssessmentDetailPage() {
                     <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
                       {qType === 'yes_no' ? 'Yes/No' : qType === 'single_choice' ? 'Single Choice' : qType === 'multiple_choice' ? 'Multiple Choice' : 'Text'}
                     </span>
-                    {answer?.flaggedAsRisk && <span className="text-xs text-red-600 font-medium">⚠️ Risk Flagged</span>}
-                    {answer?.isCorrect && <span className="text-xs text-green-600 font-medium">✓ Correct</span>}
+                    {answer && <span className="text-xs text-green-600 font-medium">✓ Answered</span>}
                   </div>
                   <p className="font-medium text-gray-900 mb-3">{idx + 1}. {q.text}</p>
 

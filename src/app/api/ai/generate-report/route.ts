@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserFromRequest } from '@/lib/auth';
 import { AssessmentSubmission, DomainScore, IdentifiedRisk } from '@/types/database';
+import { createItem } from '@/lib/db/base';
+import { TABLES } from '@/lib/dynamodb';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
@@ -11,14 +13,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { submission }: { submission: AssessmentSubmission } = await request.json();
+    const { submission, assessmentTitle, saveToAdminReports }: {
+      submission: AssessmentSubmission;
+      assessmentTitle?: string;
+      saveToAdminReports?: boolean;
+    } = await request.json();
 
     if (!OPENAI_API_KEY) {
       return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 500 });
     }
 
     const prompt = buildReportPrompt(submission);
-    
+
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -49,28 +55,61 @@ export async function POST(request: NextRequest) {
     const content = data.choices[0]?.message?.content;
 
     // Parse the JSON response
-    let report;
+    let parsedReport;
     try {
       const jsonMatch = content.match(/```json\n?([\s\S]*?)\n?```/) || content.match(/\{[\s\S]*\}/);
-      report = JSON.parse(jsonMatch ? (jsonMatch[1] || jsonMatch[0]) : content);
+      parsedReport = JSON.parse(jsonMatch ? (jsonMatch[1] || jsonMatch[0]) : content);
     } catch {
-      report = { executiveSummary: content, domainAnalysis: [], recommendations: [], conclusion: '' };
+      parsedReport = { executiveSummary: content, domainAnalysis: [], recommendations: [], conclusion: '' };
     }
 
-    return NextResponse.json({
-      report: {
-        id: crypto.randomUUID(),
-        assessmentId: submission.assessmentId,
-        submissionId: submission.id,
-        userId: user.userId,
-        generatedAt: new Date().toISOString(),
-        overallScore: submission.overallScore,
-        overallPercentage: submission.overallPercentage,
-        domainScores: submission.domainScores,
-        ...report,
-        flaggedRisks: submission.risksIdentified,
+    const reportId = crypto.randomUUID();
+    const generatedAt = new Date().toISOString();
+
+    const report = {
+      id: reportId,
+      assessmentId: submission.assessmentId,
+      submissionId: submission.id,
+      userId: user.userId,
+      userName: submission.userName,
+      userEmail: submission.userEmail,
+      companyName: submission.companyName,
+      generatedAt,
+      overallScore: submission.overallScore,
+      overallPercentage: submission.overallPercentage,
+      maturityLevel: submission.maturityLevel,
+      domainScores: submission.domainScores,
+      ...parsedReport,
+      flaggedRisks: submission.risksIdentified,
+      totalRisks: submission.totalRisks,
+    };
+
+    // Save report to admin Reports table if requested
+    if (saveToAdminReports) {
+      try {
+        await createItem(TABLES.REPORTS, {
+          id: reportId,
+          userId: user.userId,
+          assessmentId: submission.assessmentId,
+          title: `Assessment Report: ${assessmentTitle || submission.assessmentTitle}`,
+          userName: submission.userName,
+          userEmail: submission.userEmail,
+          companyName: submission.companyName,
+          content: JSON.stringify(report),
+          overallScore: submission.overallPercentage,
+          maturityLevel: submission.maturityLevel,
+          generatedAt,
+          status: 'completed',
+          type: 'assessment',
+        });
+        console.log('Report saved to admin reports:', reportId);
+      } catch (saveError) {
+        console.error('Error saving report to admin:', saveError);
+        // Don't fail the request if saving fails
       }
-    });
+    }
+
+    return NextResponse.json({ report });
   } catch (error) {
     console.error('Generate report error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

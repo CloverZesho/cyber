@@ -5,12 +5,27 @@ import Modal from '@/components/Modal';
 
 interface Report {
   id: string;
-  assessmentTitle: string;
-  overallScore: number;
-  identifiedRisks: string[];
-  recommendations: string[];
-  generatedAt: string;
+  title: string;
+  assessmentId: string;
   userId: string;
+  userName?: string;
+  userEmail?: string;
+  companyName?: string;
+  overallScore: number;
+  maturityLevel?: string;
+  generatedAt: string;
+  status: string;
+  type: string;
+  content: string; // JSON stringified full report
+}
+
+interface ParsedReportContent {
+  executiveSummary?: string;
+  domainAnalysis?: { domain: string; analysis: string; recommendations: string[] }[];
+  recommendations?: string[];
+  conclusion?: string;
+  flaggedRisks?: { questionText: string; domain: string; riskLevel: string }[];
+  totalRisks?: number;
 }
 
 export default function AdminReportsPage() {
@@ -18,6 +33,7 @@ export default function AdminReportsPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'recent' | 'high-risk'>('all');
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
+  const [parsedContent, setParsedContent] = useState<ParsedReportContent | null>(null);
 
   useEffect(() => {
     fetchReports();
@@ -42,7 +58,7 @@ export default function AdminReportsPage() {
       return reports.filter(r => new Date(r.generatedAt) >= oneWeekAgo);
     }
     if (filter === 'high-risk') {
-      return reports.filter(r => r.identifiedRisks && r.identifiedRisks.length > 0);
+      return reports.filter(r => r.overallScore < 60);
     }
     return reports;
   };
@@ -53,6 +69,27 @@ export default function AdminReportsPage() {
     if (score >= 80) return 'text-green-600 bg-green-100';
     if (score >= 60) return 'text-yellow-600 bg-yellow-100';
     return 'text-red-600 bg-red-100';
+  };
+
+  const getMaturityColor = (level?: string) => {
+    switch (level) {
+      case 'Excellent': return 'text-green-700 bg-green-100';
+      case 'High': return 'text-blue-700 bg-blue-100';
+      case 'Medium': return 'text-yellow-700 bg-yellow-100';
+      case 'Low': return 'text-orange-700 bg-orange-100';
+      case 'Critical': return 'text-red-700 bg-red-100';
+      default: return 'text-gray-700 bg-gray-100';
+    }
+  };
+
+  const handleSelectReport = (report: Report) => {
+    setSelectedReport(report);
+    try {
+      const parsed = JSON.parse(report.content);
+      setParsedContent(parsed);
+    } catch {
+      setParsedContent(null);
+    }
   };
 
   return (
@@ -85,17 +122,25 @@ export default function AdminReportsPage() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredReports.map((report) => (
             <div key={report.id} className="bg-white rounded-xl shadow p-6 hover:shadow-lg transition cursor-pointer"
-              onClick={() => setSelectedReport(report)}>
-              <h3 className="font-semibold text-lg mb-2">{report.assessmentTitle}</h3>
-              <div className="flex items-center gap-4 mb-3">
+              onClick={() => handleSelectReport(report)}>
+              <h3 className="font-semibold text-lg mb-2">{report.title}</h3>
+              <div className="flex items-center gap-2 flex-wrap mb-3">
                 <span className={`px-3 py-1 rounded-full text-sm font-medium ${getScoreColor(report.overallScore)}`}>
-                  Score: {report.overallScore}%
+                  {report.overallScore}%
                 </span>
-                {report.identifiedRisks?.length > 0 && (
-                  <span className="text-red-600 text-sm">⚠️ {report.identifiedRisks.length} risks</span>
+                {report.maturityLevel && (
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getMaturityColor(report.maturityLevel)}`}>
+                    {report.maturityLevel}
+                  </span>
                 )}
               </div>
-              <p className="text-sm text-gray-500">
+              {report.userName && (
+                <p className="text-sm text-gray-600 mb-1">👤 {report.userName}</p>
+              )}
+              {report.companyName && (
+                <p className="text-sm text-gray-600 mb-2">🏢 {report.companyName}</p>
+              )}
+              <p className="text-xs text-gray-500">
                 Generated: {new Date(report.generatedAt).toLocaleDateString()}
               </p>
             </div>
@@ -107,38 +152,96 @@ export default function AdminReportsPage() {
         <div className="text-center py-12 bg-white rounded-xl shadow">
           <div className="text-4xl mb-4">📈</div>
           <p className="text-gray-500">No reports found</p>
+          <p className="text-sm text-gray-400 mt-2">Reports are auto-generated when users complete assessments</p>
         </div>
       )}
 
       {/* Report Detail Modal */}
-      <Modal isOpen={!!selectedReport} onClose={() => setSelectedReport(null)} title={selectedReport?.assessmentTitle || ''} size="lg">
+      <Modal isOpen={!!selectedReport} onClose={() => { setSelectedReport(null); setParsedContent(null); }} title={selectedReport?.title || ''} size="xl">
         {selectedReport && (
-          <div className="space-y-6">
-            <div className="flex items-center gap-4">
+          <div className="space-y-6 max-h-[70vh] overflow-y-auto">
+            {/* Header Info */}
+            <div className="flex flex-wrap items-center gap-4 p-4 bg-gray-50 rounded-lg">
               <div className={`text-3xl font-bold px-4 py-2 rounded-lg ${getScoreColor(selectedReport.overallScore)}`}>
                 {selectedReport.overallScore}%
               </div>
-              <div>
-                <p className="font-medium">Overall Score</p>
+              <div className="flex-1">
+                <p className="font-medium">{selectedReport.maturityLevel} Maturity</p>
                 <p className="text-sm text-gray-500">Generated {new Date(selectedReport.generatedAt).toLocaleString()}</p>
               </div>
+              {selectedReport.userName && (
+                <div className="text-sm">
+                  <p className="text-gray-600">👤 {selectedReport.userName}</p>
+                  <p className="text-gray-500">{selectedReport.userEmail}</p>
+                  {selectedReport.companyName && <p className="text-gray-600">🏢 {selectedReport.companyName}</p>}
+                </div>
+              )}
             </div>
 
-            {selectedReport.identifiedRisks?.length > 0 && (
+            {/* Executive Summary */}
+            {parsedContent?.executiveSummary && (
               <div>
-                <h4 className="font-semibold mb-2">⚠️ Identified Risks</h4>
-                <ul className="list-disc list-inside space-y-1 text-sm text-red-700 bg-red-50 p-4 rounded-lg">
-                  {selectedReport.identifiedRisks.map((risk, i) => <li key={i}>{risk}</li>)}
+                <h4 className="font-semibold mb-2">📋 Executive Summary</h4>
+                <p className="text-sm text-gray-700 bg-blue-50 p-4 rounded-lg whitespace-pre-wrap">{parsedContent.executiveSummary}</p>
+              </div>
+            )}
+
+            {/* Domain Analysis */}
+            {parsedContent?.domainAnalysis && parsedContent.domainAnalysis.length > 0 && (
+              <div>
+                <h4 className="font-semibold mb-2">🎯 Domain Analysis</h4>
+                <div className="space-y-3">
+                  {parsedContent.domainAnalysis.map((da, i) => (
+                    <div key={i} className="bg-gray-50 p-4 rounded-lg">
+                      <h5 className="font-medium text-primary-700 mb-1">{da.domain}</h5>
+                      <p className="text-sm text-gray-700 mb-2">{da.analysis}</p>
+                      {da.recommendations?.length > 0 && (
+                        <ul className="list-disc list-inside text-sm text-gray-600">
+                          {da.recommendations.map((r, j) => <li key={j}>{r}</li>)}
+                        </ul>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Flagged Risks */}
+            {parsedContent?.flaggedRisks && parsedContent.flaggedRisks.length > 0 && (
+              <div>
+                <h4 className="font-semibold mb-2">⚠️ Identified Risks ({parsedContent.flaggedRisks.length})</h4>
+                <ul className="space-y-2">
+                  {parsedContent.flaggedRisks.slice(0, 10).map((risk, i) => (
+                    <li key={i} className="text-sm p-3 bg-red-50 rounded-lg">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium mr-2
+                        ${risk.riskLevel === 'Critical' ? 'bg-red-200 text-red-800' :
+                          risk.riskLevel === 'High' ? 'bg-orange-200 text-orange-800' :
+                          risk.riskLevel === 'Medium' ? 'bg-yellow-200 text-yellow-800' : 'bg-gray-200 text-gray-800'}`}>
+                        {risk.riskLevel}
+                      </span>
+                      <span className="text-gray-700">{risk.questionText}</span>
+                      <span className="text-xs text-gray-500 ml-2">({risk.domain})</span>
+                    </li>
+                  ))}
                 </ul>
               </div>
             )}
 
-            {selectedReport.recommendations?.length > 0 && (
+            {/* Recommendations */}
+            {parsedContent?.recommendations && parsedContent.recommendations.length > 0 && (
               <div>
                 <h4 className="font-semibold mb-2">💡 Recommendations</h4>
                 <ul className="list-disc list-inside space-y-1 text-sm text-green-700 bg-green-50 p-4 rounded-lg">
-                  {selectedReport.recommendations.map((rec, i) => <li key={i}>{rec}</li>)}
+                  {parsedContent.recommendations.map((rec, i) => <li key={i}>{rec}</li>)}
                 </ul>
+              </div>
+            )}
+
+            {/* Conclusion */}
+            {parsedContent?.conclusion && (
+              <div>
+                <h4 className="font-semibold mb-2">📝 Conclusion</h4>
+                <p className="text-sm text-gray-700 bg-gray-50 p-4 rounded-lg whitespace-pre-wrap">{parsedContent.conclusion}</p>
               </div>
             )}
           </div>
