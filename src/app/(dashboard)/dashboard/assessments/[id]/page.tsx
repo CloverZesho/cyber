@@ -1,14 +1,13 @@
 'use client';
 
-import { useState, useEffect, use } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useParams } from 'next/navigation';
 import Modal from '@/components/Modal';
 import { Assessment, Question, Answer, DomainScore, IdentifiedRisk, AssessmentSubmission } from '@/types/database';
 
-interface Props { params: Promise<{ id: string }> }
-
-export default function AssessmentDetailPage({ params }: Props) {
-  const { id } = use(params);
+export default function AssessmentDetailPage() {
+  const params = useParams();
+  const id = params.id as string;
   const router = useRouter();
   const [assessment, setAssessment] = useState<Assessment | null>(null);
   const [answers, setAnswers] = useState<Record<string, Answer>>({});
