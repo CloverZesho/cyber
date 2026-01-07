@@ -13,6 +13,7 @@ export default function AssessmentDetailPage({ params }: Props) {
   const [assessment, setAssessment] = useState<Assessment | null>(null);
   const [answers, setAnswers] = useState<Record<string, Answer>>({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [showResultsModal, setShowResultsModal] = useState(false);
   const [currentDomain, setCurrentDomain] = useState<string>('all');
@@ -24,8 +25,20 @@ export default function AssessmentDetailPage({ params }: Props) {
 
   const fetchAssessment = async () => {
     try {
+      setError(null);
       const res = await fetch(`/api/assessments/${id}`);
       const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || 'Failed to load assessment');
+        return;
+      }
+
+      if (!data.assessment) {
+        setError('Assessment not found or you do not have access to it');
+        return;
+      }
+
       setAssessment(data.assessment);
       // Initialize answers from existing progress if any
       if (data.progress?.answers) {
@@ -33,7 +46,10 @@ export default function AssessmentDetailPage({ params }: Props) {
         data.progress.answers.forEach((a: Answer) => { answerMap[a.questionId] = a; });
         setAnswers(answerMap);
       }
-    } catch (error) { console.error('Error:', error); }
+    } catch (err) {
+      console.error('Error:', err);
+      setError('Failed to connect to server. Please try again.');
+    }
     finally { setLoading(false); }
   };
 
@@ -264,7 +280,29 @@ export default function AssessmentDetailPage({ params }: Props) {
   const uniqueDomains = Array.from(new Set(assessment?.questions.map(q => q.domain) || []));
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading...</div></div>;
-  if (!assessment) return <div className="text-center py-12"><p className="text-gray-500">Assessment not found</p></div>;
+
+  if (error) return (
+    <div className="text-center py-12">
+      <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-100 mb-4">
+        <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+      </div>
+      <h2 className="text-xl font-semibold text-gray-900 mb-2">Unable to Load Assessment</h2>
+      <p className="text-gray-500 mb-4">{error}</p>
+      <div className="flex gap-3 justify-center">
+        <button type="button" onClick={() => router.back()} className="btn-secondary">← Go Back</button>
+        <button type="button" onClick={fetchAssessment} className="btn-primary">Try Again</button>
+      </div>
+    </div>
+  );
+
+  if (!assessment) return (
+    <div className="text-center py-12">
+      <p className="text-gray-500">Assessment not found</p>
+      <button type="button" onClick={() => router.back()} className="btn-secondary mt-4">← Go Back</button>
+    </div>
+  );
 
   return (
     <div className="space-y-6 pb-20 lg:pb-0">

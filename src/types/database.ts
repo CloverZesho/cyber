@@ -16,6 +16,8 @@ export interface User {
   status: 'pending' | 'approved' | 'rejected';
   companyName: string;
   lastLoginAt?: string;
+  passwordResetToken?: string;
+  passwordResetExpires?: string;
   createdAt: string;
   updatedAt: string;
 }
