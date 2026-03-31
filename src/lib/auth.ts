@@ -3,7 +3,17 @@ import { cookies } from 'next/headers';
 import { NextRequest } from 'next/server';
 import { User } from '@/types/database';
 
-const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || 'default-secret-change-in-production');
+function getJwtSecret(): Uint8Array {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.trim().length === 0) {
+    throw new Error('Missing required environment variable: JWT_SECRET. Set it in your Vercel project environment variables.');
+  }
+  if (process.env.NODE_ENV === 'production' && secret === 'default-secret-change-in-production') {
+    throw new Error('JWT_SECRET is set to the default insecure value. Please set a strong secret in Vercel environment variables.');
+  }
+  return new TextEncoder().encode(secret);
+}
+
 const COOKIE_NAME = 'auth_token';
 
 export interface JWTPayload {
@@ -25,7 +35,7 @@ export async function createToken(user: User): Promise<string> {
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime('7d')
-    .sign(JWT_SECRET);
+    .sign(getJwtSecret());
 
   return token;
 }
@@ -33,7 +43,7 @@ export async function createToken(user: User): Promise<string> {
 // Verify JWT token
 export async function verifyToken(token: string): Promise<JWTPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const { payload } = await jwtVerify(token, getJwtSecret());
     return payload as unknown as JWTPayload;
   } catch {
     return null;

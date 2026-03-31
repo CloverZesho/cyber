@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyPassword, updateUser } from '@/lib/db/users';
 import { createToken, setAuthCookie } from '@/lib/auth';
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return 'Unknown error';
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { email, password } = await request.json();
@@ -53,7 +58,19 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Login error:', error);
+    const message = getErrorMessage(error);
+    console.error('Login error:', {
+      message,
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+
+    if (message.includes('Missing required environment variable')) {
+      return NextResponse.json(
+        { error: 'Server configuration error. Please contact support.' },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

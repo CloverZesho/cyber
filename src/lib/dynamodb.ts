@@ -1,18 +1,43 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-const client = new DynamoDBClient({
-  region: process.env.AWS_REGION || 'us-east-1',
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
-  },
-});
+function getRequiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value || value.trim().length === 0) {
+    throw new Error(
+      `Missing required environment variable: ${name}. Set it in your Vercel project → Settings → Environment Variables.`
+    );
+  }
+  return value;
+}
 
-export const docClient = DynamoDBDocumentClient.from(client, {
-  marshallOptions: {
-    removeUndefinedValues: true,
-    convertEmptyValues: false,
+// Lazy singleton — created on first use so build-time static analysis doesn't throw
+let _docClient: DynamoDBDocumentClient | null = null;
+
+function getDocClient(): DynamoDBDocumentClient {
+  if (!_docClient) {
+    const client = new DynamoDBClient({
+      region: process.env.AWS_REGION || 'us-east-1',
+      credentials: {
+        accessKeyId: getRequiredEnv('AWS_ACCESS_KEY_ID'),
+        secretAccessKey: getRequiredEnv('AWS_SECRET_ACCESS_KEY'),
+      },
+    });
+    _docClient = DynamoDBDocumentClient.from(client, {
+      marshallOptions: {
+        removeUndefinedValues: true,
+        convertEmptyValues: false,
+      },
+    });
+  }
+  return _docClient;
+}
+
+export const docClient = new Proxy({} as DynamoDBDocumentClient, {
+  get(_target, prop) {
+    const client = getDocClient();
+    const value = (client as unknown as Record<string | symbol, unknown>)[prop];
+    return typeof value === 'function' ? value.bind(client) : value;
   },
 });
 
