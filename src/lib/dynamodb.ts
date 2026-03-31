@@ -16,11 +16,16 @@ let _docClient: DynamoDBDocumentClient | null = null;
 
 function getDocClient(): DynamoDBDocumentClient {
   if (!_docClient) {
+    const accessKeyId = getRequiredEnv('AWS_ACCESS_KEY_ID');
+    const secretAccessKey = getRequiredEnv('AWS_SECRET_ACCESS_KEY');
+    const sessionToken = process.env.AWS_SESSION_TOKEN?.trim() || undefined;
+
     const client = new DynamoDBClient({
       region: process.env.AWS_REGION || 'us-east-1',
       credentials: {
-        accessKeyId: getRequiredEnv('AWS_ACCESS_KEY_ID'),
-        secretAccessKey: getRequiredEnv('AWS_SECRET_ACCESS_KEY'),
+        accessKeyId,
+        secretAccessKey,
+        ...(sessionToken ? { sessionToken } : {}),
       },
     });
     _docClient = DynamoDBDocumentClient.from(client, {
